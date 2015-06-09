@@ -17,6 +17,10 @@ notebooks/*.h5
 .idea
 .DS_Store
 
+# Ignoring Local datasets: 
+data/REDD
+data/ukdale
 *.h5
 *.tar
 *.dat
+

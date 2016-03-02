@@ -16,3 +16,4 @@ notebooks/*.h5
 .idea/*
 .idea
 .DS_Store
+data

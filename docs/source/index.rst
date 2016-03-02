@@ -1,43 +1,15 @@
-.. NILMTK documentation master file, created by
-   sphinx-quickstart on Thu Jul 10 09:22:49 2014.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. NILMTK documentation master file
 
-Welcome to NILMTK's documentation!
-==================================
 
-.. toctree::
-   :maxdepth: 2
+Welcome to NILMTK's API documentation!
+======================================
 
-   intro_nilmtk_v0_2
+Please note that this website only contains the automatically
+generated documentation, taken from the NILMTK Python docstrings.  The
+manual has been moved to a set of `IPython notebooks <https://github.com/nilmtk/nilmtk/tree/master/docs/manual>`_.
 
-User Manual
------------
-
-.. toctree::
-   :maxdepth: 2
-
-   convert_data_to_NILMTK_format
-   elecmeter_and_metergroup
-   pipeline_preprocessing_more_stats
-   disaggregation_and_metrics
-
-Developer Manual
-----------------
-
-.. toctree::
-   :maxdepth: 2
-
-   contribute
-   writing_a_dataset_converter
-
-.. toctree::
-   :maxdepth: 1
-
-   changelog
-
-API
----
+API Documentation
+=================
 
 .. toctree::
    :maxdepth: 4

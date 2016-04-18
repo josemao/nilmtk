@@ -21,9 +21,10 @@
 * [API Documentation](http://nilmtk.github.io/nilmtk/master/index.html)
 * [Contributing](https://github.com/nilmtk/nilmtk/blob/master/docs/manual/development_guide/contributing.md)  (including submitting a bug report)
 * Architectural overview
+  * [UML Class Diagram](https://raw.githubusercontent.com/nilmtk/writing/master/figures/NILMTK_UML.png)
 * Overview of the flow of data through NILMTK
 * Out of core processing
 * [Writing a dataset importer](https://github.com/nilmtk/nilmtk/blob/master/docs/manual/development_guide/writing_a_dataset_converter.md)
-* Writing a disaggregation algorithm
+* [Writing a disaggregation algorithm](https://github.com/nilmtk/nilmtk/blob/master/docs/manual/development_guide/writing_a_disaggregation_algorithm.md)
 * Writing a metric
 * [Changelog](https://github.com/nilmtk/nilmtk/blob/master/docs/manual/development_guide/changelog.md)

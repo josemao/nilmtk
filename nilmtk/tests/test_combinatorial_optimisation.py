@@ -3,14 +3,10 @@ from __future__ import print_function, division
 import unittest
 from os.path import join
 from os import remove
-import pandas as pd
-from datetime import timedelta
 from testingtools import data_dir
 from nilmtk.datastore import HDFDataStore
-from nilmtk import TimeFrame
-from nilmtk import DataSet, TimeFrame
+from nilmtk import DataSet
 from nilmtk.disaggregate import CombinatorialOptimisation
-from nilmtk import HDFDataStore
 
 
 class TestCO(unittest.TestCase):
@@ -30,7 +26,7 @@ class TestCO(unittest.TestCase):
         co.train(elec)
         mains = elec.mains()
         output = HDFDataStore('output.h5', 'w')
-        co.disaggregate(mains, output, resample_seconds=1)
+        co.disaggregate(mains, output, sample_period=1)
 
         for meter in range(2, 4):
             df1 = output.store.get('/building1/elec/meter{}'.format(meter))

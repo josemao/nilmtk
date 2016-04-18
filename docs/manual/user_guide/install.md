@@ -1,13 +1,81 @@
 
 # Install NILMTK
 
+We recommend using
+[Anaconda](https://store.continuum.io/cshop/anaconda/), which bundles
+togther most of the required packages. Please download Anaconda for
+Python 2.7.x. We do not currently support Python 3.
+
+After installing Anaconda, please do the following.  We have two
+sections below:
+[one for Linux or OSX](#install-on-ubuntu-like-linux-variants-debian-based-or-osx)
+and another [section for Windows](#install-on-windows).
+
 ### Install on Ubuntu like Linux variants (debian based) or OSX
 
-NB: The following procedure is for Ubuntu like Linux variants (debian based). Please adapt accordingly for your OS. We would welcome installation instructions for other OSes as well.
+NB: The following procedure is for Ubuntu like Linux variants (Debian
+based). Please adapt accordingly for your OS. We would welcome
+installation instructions for other OSes as well.
 
-We recommend using [Anaconda](https://store.continuum.io/cshop/anaconda/), which bundles togther most of the required packages. Please download Anaconda for Python 2.7.x. We do not currently support Python 3.
+#### Experimental but probably easiest installation procedure for Unix or OSX
 
-After installing Anaconda, please do the following:
+In this section we will describe a fast and simple, but fairly
+untested installation procedure.  Please give this a go and tell us in
+[the issue queue](https://github.com/nilmtk/nilmtk/issues) if this
+process doesn't work for you.  The old Unix and OSX instructions are
+further down this page if you need to try them.
+
+Install git, if necessary:
+
+```bash
+sudo apt-get install git
+```
+
+Download NILMTK:
+
+```bash
+cd ~
+git clone https://github.com/nilmtk/nilmtk.git
+cd nilmtk
+```
+
+The next step uses [conda-env](https://github.com/conda/conda-env) to
+install an environment for NILMTK, using NILMTK's `environment.yml`
+text file to define which packages need to be installed:
+
+```bash
+conda env create
+source activate nilmtk-env
+```
+
+Next we will install
+[nilm_metadata](https://github.com/nilmtk/nilm_metadata) (can't yet
+install using pip / conda):
+
+```bash
+cd ~
+git clone https://github.com/nilmtk/nilm_metadata/
+cd nilm_metadata; python setup.py develop; cd ..
+```
+
+Change back to your nilmtk directory and install NILMTK:
+
+```bash
+cd ~/nilmtk
+python setup.py develop
+```
+
+Run the unit tests:
+
+```bash
+nosetests
+```
+
+Then, work away on NILMTK :).  When you are done, just do `source
+deactivate` to deactivate the nilmtk-env.
+
+
+#### Old installation procedure for Unix or OSX
 
 - Update anaconda
 ```bash
@@ -26,8 +94,18 @@ sudo apt-get install git
 
 - Install pip and other dependencies which might be missing from Anaconda
 ```bash
-conda install --yes pip numpy scipy six scikit-learn pandas numexpr pytables dateutil matplotlib networkx
+conda install --yes pip numpy scipy six scikit-learn pandas numexpr pytables dateutil matplotlib networkx hmmlearn
 ```
+Note that, if you are using `pip` instead of `conda` then remove
+`dateutil` and replace `pytables` with `tables`.
+
+Please also note that there is
+[a bug in Pandas 0.17](https://github.com/pydata/pandas/issues/11626)
+which causes serious issues with data where the datetime index crosses
+a daylight saving boundary.  As such, please do not install Pandas
+0.17 for use with NILMTK.  Pandas 0.17.1 was released on the 20th Nov
+2015 and includes a fix for this bug.  Please make sure you install
+Pandas 0.17.1 or higher.
 
 - Install [NILM Metadata](https://github.com/nilmtk/nilm_metadata).
 ```bash
@@ -37,17 +115,17 @@ python setup.py develop
 cd ..
 ```
 
-- Install [hmmlearn](https://github.com/hmmlearn/hmmlearn)
+- Install psycopg2
+First you need to install Postgres:
 ```bash
-git clone git://github.com/hmmlearn/hmmlearn.git
-cd hmmlearn
-python setup.py install
-cd ..
+sudo apt-get install postgresql postgresql-contrib
+sudo apt-get install postgresql-server-dev-all
+pip install psycopg2
 ```
 
 - Misc. pip installs
 ```bash
-pip install psycopg2 nose coveralls coverage
+pip install nose coveralls coverage
 ```
 
 - Finally! Install NILMTK
@@ -70,9 +148,16 @@ nosetests
 
 - Install [git](http://git-scm.com/download/win) client. You may need to add `git.exe` to your path in order to run nilmtk tests. 
 
+- Now, we recommend trying
+  [the experimental but simple installation instructions above](#experimental-but-probably-easiest-installation-procedure-for-unix-or-osx).
+  If they don't work then let us know on [the issue queue](https://github.com/nilmtk/nilmtk/issues) and then try
+  the old windows installation procedure below:
+
+#### Old Windows installation procedure
+
 - Install pip and other dependencies which might be missing from Anaconda
 ```bash
-conda install --yes pip numpy scipy six scikit-learn pandas numexpr pytables dateutil matplotlib networkx
+conda install --yes pip numpy scipy six scikit-learn pandas numexpr pytables dateutil matplotlib networkx hmmlearn
 ```
 
 - Install [NILM Metadata](https://github.com/nilmtk/nilm_metadata) from git bash
@@ -80,14 +165,6 @@ conda install --yes pip numpy scipy six scikit-learn pandas numexpr pytables dat
 git clone https://github.com/nilmtk/nilm_metadata/
 cd nilm_metadata
 python setup.py develop
-cd ..
-```
-
-- Install [hmmlearn](https://github.com/hmmlearn/hmmlearn)
-```bash
-git clone git://github.com/hmmlearn/hmmlearn.git
-cd hmmlearn
-python setup.py install
 cd ..
 ```
 

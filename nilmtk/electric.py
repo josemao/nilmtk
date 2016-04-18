@@ -18,9 +18,9 @@ import pytz
 
 from .timeframe import TimeFrame
 from .measurement import select_best_ac_type
-from .utils import (offset_alias_to_seconds, convert_to_timestamp, 
+from .utils import (offset_alias_to_seconds, convert_to_timestamp,
                     flatten_2d_list, append_or_extend_list,
-                    timedelta64_to_secs)
+                    timedelta64_to_secs, safe_resample)
 from .plots import plot_series
 from .preprocessing import Apply
 from nilmtk.stats.histogram import histogram_from_generator
@@ -103,11 +103,19 @@ class Electric(object):
         return False
 
     def power_series_all_data(self, **kwargs):
-        chunks = []        
+        chunks = []
         for series in self.power_series(**kwargs):
             if len(series) > 0:
                 chunks.append(series)
         if chunks:
+            # Get rid of overlapping indicies
+            prev_end = None
+            for i, chunk in enumerate(chunks):
+                if i > 0:
+                    if chunk.index[0] <= prev_end:
+                        chunks[i] = chunk.iloc[1:]
+                prev_end = chunk.index[-1]
+
             all_data = pd.concat(chunks)
         else:
             all_data = None
@@ -124,7 +132,7 @@ class Electric(object):
 
         if sample_period is None:
             sample_period = self.sample_period()
-        else:
+        elif resample != False:
             resample = True
         sample_period = int(round(sample_period))
 
@@ -134,16 +142,7 @@ class Electric(object):
 
             def resample_func(df):
                 resample_kwargs['rule'] = '{:d}S'.format(sample_period)
-                try:
-                    df = df.resample(**resample_kwargs)
-                except pytz.AmbiguousTimeError:
-                    # Work-around for
-                    # https://github.com/pydata/pandas/issues/10117
-                    tz = df.index.tz.zone
-                    df = df.tz_convert('UTC')
-                    df = df.resample(**resample_kwargs)
-                    df = df.tz_convert(tz)
-                return df
+                return safe_resample(df, **resample_kwargs)
 
             kwargs.setdefault('preprocessing', []).append(
                 Apply(func=resample_func))
@@ -223,7 +222,8 @@ class Electric(object):
 
     def vampire_power(self, **load_kwargs):
         # TODO: this might be a naive approach to calculating vampire power.
-        return self.power_series_all_data(**load_kwargs).min()
+        power_series = self.power_series_all_data(**load_kwargs)
+        return get_vampire_power(power_series)
 
     def uptime(self, **load_kwargs):
         """
@@ -728,8 +728,44 @@ class Electric(object):
         ax.set_ylabel('Count')
         return ax
 
-    def activation_series(self, min_off_duration=None, min_on_duration=None,
-                          border=1, on_power_threshold=None, **kwargs):
+    def activation_series(self, *args, **kwargs):
+        """Returns runs of an appliance.
+
+        Most appliances spend a lot of their time off.  This function finds
+        periods when the appliance is on.
+
+        Parameters
+        ----------
+        min_off_duration : int
+            If min_off_duration > 0 then ignore 'off' periods less than
+            min_off_duration seconds of sub-threshold power consumption
+            (e.g. a washing machine might draw no power for a short
+            period while the clothes soak.)  Defaults value from metadata or,
+            if metadata absent, defaults to 0.
+        min_on_duration : int
+            Any activation lasting less seconds than min_on_duration will be
+            ignored.  Defaults value from metadata or, if metadata absent,
+            defaults to 0.
+        border : int
+            Number of rows to include before and after the detected activation
+        on_power_threshold : int or float
+            Defaults to self.on_power_threshold()
+        **kwargs : kwargs for self.power_series()
+
+        Returns
+        -------
+        list of pd.Series.  Each series contains one activation.
+
+        .. note:: Deprecated
+          `activation_series` will be removed in NILMTK v0.3.
+          Please use `get_activations` instead.
+        """
+        warn("`activation_series()` is deprecated."
+             "  Please use `get_activations()` instead!", DeprecationWarning)
+        return self.get_activations(*args, **kwargs)
+
+    def get_activations(self, min_off_duration=None, min_on_duration=None,
+                        border=1, on_power_threshold=None, **kwargs):
         """Returns runs of an appliance.
 
         Most appliances spend a lot of their time off.  This function finds
@@ -757,7 +793,6 @@ class Electric(object):
         -------
         list of pd.Series.  Each series contains one activation.
         """
-        kwargs.setdefault('resample', True)
         if on_power_threshold is None:
             on_power_threshold = self.on_power_threshold()
 
@@ -768,10 +803,12 @@ class Electric(object):
             min_on_duration = self.min_on_duration()
 
         activations = []
+        kwargs.setdefault('resample', True)
         for chunk in self.power_series(**kwargs):
-            activations_for_chunk = activation_series_for_chunk(
-                chunk, min_off_duration, min_on_duration,
-                border, on_power_threshold)
+            activations_for_chunk = get_activations(
+                chunk=chunk, min_off_duration=min_off_duration,
+                min_on_duration=min_on_duration, border=border,
+                on_power_threshold=on_power_threshold)
             activations.extend(activations_for_chunk)
 
         return activations
@@ -808,8 +845,7 @@ def align_two_meters(master, slave, func='power_series'):
         yield pd.DataFrame({'master': master_chunk, 'slave': slave_chunk})
 
 
-def activation_series_for_chunk(chunk, min_off_duration=0, min_on_duration=0,
-                                border=1, on_power_threshold=5):
+def activation_series_for_chunk(*args, **kwargs):
     """Returns runs of an appliance.
 
     Most appliances spend a lot of their time off.  This function finds
@@ -829,7 +865,43 @@ def activation_series_for_chunk(chunk, min_off_duration=0, min_on_duration=0,
     border : int
         Number of rows to include before and after the detected activation
     on_power_threshold : int or float
-        Defaults to self.on_power_threshold()
+        Watts
+
+    Returns
+    -------
+    list of pd.Series.  Each series contains one activation.
+
+    .. note:: Deprecated
+      `activation_series` will be removed in NILMTK v0.3.
+      Please use `get_activations` instead.
+    """
+    warn("`activation_series_for_chunk()` is deprecated."
+         "  Please use `get_activations()` instead!", DeprecationWarning)
+    return get_activations(*args, **kwargs)
+
+
+def get_activations(chunk, min_off_duration=0, min_on_duration=0,
+                    border=1, on_power_threshold=5):
+    """Returns runs of an appliance.
+
+    Most appliances spend a lot of their time off.  This function finds
+    periods when the appliance is on.
+
+    Parameters
+    ----------
+    chunk : pd.Series
+    min_off_duration : int
+        If min_off_duration > 0 then ignore 'off' periods less than
+        min_off_duration seconds of sub-threshold power consumption
+        (e.g. a washing machine might draw no power for a short
+        period while the clothes soak.)  Defaults to 0.
+    min_on_duration : int
+        Any activation lasting less seconds than min_on_duration will be
+        ignored.  Defaults to 0.
+    border : int
+        Number of rows to include before and after the detected activation
+    on_power_threshold : int or float
+        Watts
 
     Returns
     -------
@@ -885,6 +957,19 @@ def activation_series_for_chunk(chunk, min_off_duration=0, min_on_duration=0,
         if on < 0:
             on = 0
         off += border
-        activations.append(chunk.iloc[on:off])
+        activation = chunk.iloc[on:off]
+        # throw away any activation with any NaN values
+        if not activation.isnull().values.any():
+            activations.append(activation)
 
     return activations
+
+
+def get_vampire_power(power_series):
+    # This is a very simple function at the moment but
+    # in the future we may want to implement a more
+    # sophisticated vampire power function, so it is worth
+    # calling `get_vampire_power` instead of just doing
+    # power_series.min() in case we get round to building
+    # a better vampire power function!
+    return power_series.min()

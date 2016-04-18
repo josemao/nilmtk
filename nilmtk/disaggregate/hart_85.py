@@ -1,14 +1,21 @@
 from __future__ import print_function, division
-import pandas as pd
 from collections import OrderedDict, deque
 from datetime import datetime
-from ..feature_detectors.cluster import hart85_means_shift_cluster
-from ..feature_detectors.steady_states import find_steady_states_transients
-from ..timeframe import merge_timeframes, list_of_timeframe_dicts, TimeFrame
+from warnings import warn
+
+import pandas as pd
+
+from nilmtk.feature_detectors.cluster import hart85_means_shift_cluster
+from nilmtk.feature_detectors.steady_states import (
+    find_steady_states_transients)
+from nilmtk.timeframe import merge_timeframes, TimeFrame
+from nilmtk.disaggregate import Disaggregator
+
 
 # Fix the seed for repeatability of experiments
 SEED = 42
 import numpy as np
+
 np.random.seed(SEED)
 
 
@@ -56,13 +63,13 @@ class PairBuffer(object):
         if self._num_measurements == 3:
             # Both active and reactive power is available
             self.pair_columns = ['T1 Time', 'T1 Active', 'T1 Reactive',
-                                'T2 Time', 'T2 Active', 'T2 Reactive']
+                                 'T2 Time', 'T2 Active', 'T2 Reactive']
         elif self._num_measurements == 2:
             # Only active power is available
             self.pair_columns = ['T1 Time', 'T1 Active',
-                                'T2 Time', 'T2 Active']
+                                 'T2 Time', 'T2 Active']
         self.matched_pairs = pd.DataFrame(columns=self.pair_columns)
-    
+
     def clean_buffer(self):
         # Remove any matched transactions
         for idx, entry in enumerate(self.transition_list):
@@ -70,9 +77,9 @@ class PairBuffer(object):
                 self.transition_list.popmiddle(idx)
                 self.clean_buffer()
                 break
-        # Remove oldest transaction if buffer cleaning didn't remove anything
-        # if len(self.transitionList) == self._bufferSize:
-        #    self.transitionList.popleft()
+                # Remove oldest transaction if buffer cleaning didn't remove anything
+                # if len(self.transitionList) == self._bufferSize:
+                #    self.transitionList.popleft()
 
     def add_transition(self, transition):
         # Check transition is as expected.
@@ -157,8 +164,9 @@ class PairBuffer(object):
                             matchtols = [self._min_tol, self._min_tol]
                             for ix in range(1, self._num_measurements):
                                 matchtols[ix - 1] = self._min_tol if (max(np.fabs([val[ix], compval[ix]]))
-                                                                     < self._large_transition) else (self._percent_tol
-                                                                                                     * max(np.fabs([val[ix], compval[ix]])))
+                                                                      < self._large_transition) else (self._percent_tol
+                                                                                                      * max(
+                                    np.fabs([val[ix], compval[ix]])))
                             if self._num_measurements == 3:
                                 condition = (np.fabs(vsum[0]) < matchtols[0]) and (
                                     np.fabs(vsum[1]) < matchtols[1])
@@ -177,7 +185,7 @@ class PairBuffer(object):
                                 # Append the OFF transition to the ON. Add to
                                 # dataframe.
                                 matchedpair = val[
-                                    0:self._num_measurements] + compval[0:self._num_measurements]
+                                              0:self._num_measurements] + compval[0:self._num_measurements]
                                 self.matched_pairs.loc[
                                     len(self.matched_pairs)] = matchedpair
 
@@ -189,24 +197,25 @@ class PairBuffer(object):
         return pairmatched
 
 
-class Hart85(object):
-    """
-    1 or 2 dimensional Hart 1985 algorithm.
+class Hart85(Disaggregator):
+    """1 or 2 dimensional Hart 1985 algorithm.
 
     Attributes
     ----------
     model : dict
-        Each key is either the instance integer for an ElecMeter, 
+        Each key is either the instance integer for an ElecMeter,
         or a tuple of instances for a MeterGroup.
         Each value is a sorted list of power in different states.
     """
 
     def __init__(self):
         self.model = {}
+        self.MODEL_NAME = "Hart85"
 
-    def train(self, metergroup, cols=[('power','active')],
-                buffer_size=20, noise_level=70, state_threshold=15,  min_tolerance=100, percent_tolerance=0.035,
-                large_transition=1000, **kwargs):
+    def train(self, metergroup, cols=[('power', 'active')],
+              buffer_size=20, noise_level=70, state_threshold=15,
+              min_tolerance=100, percent_tolerance=0.035,
+              large_transition=1000, **kwargs):
         """
         Train using Hart85. Places the learnt model in `model` attribute.
 
@@ -223,23 +232,28 @@ class Hart85(object):
         min_tolerance: int, optional
             variance in power draw allowed for pairing a match
         percent_tolerance: float, optional
-            if transition is greater than large_transition, then use percent of large_transition
+            if transition is greater than large_transition,
+            then use percent of large_transition
         large_transition: float, optional
             power draw of a Large transition
         """
         self.cols = cols
         self.state_threshold = state_threshold
         self.noise_level = noise_level
-        [self.steady_states, self.transients] = find_steady_states_transients(metergroup,  cols, noise_level, state_threshold, **kwargs)
-        self.pair_df = self.pair(buffer_size, min_tolerance, percent_tolerance, large_transition)
+        [self.steady_states, self.transients] = find_steady_states_transients(
+            metergroup, cols, noise_level, state_threshold, **kwargs)
+        self.pair_df = self.pair(
+            buffer_size, min_tolerance, percent_tolerance, large_transition)
         self.centroids = hart85_means_shift_cluster(self.pair_df, cols)
 
-    def pair(self, buffer_size, min_tolerance, percent_tolerance, large_transition):
+    def pair(self, buffer_size, min_tolerance, percent_tolerance,
+             large_transition):
         subset = list(self.transients.itertuples())
-        buffer = PairBuffer(min_tolerance=min_tolerance,
-                            buffer_size=buffer_size, percent_tolerance=percent_tolerance,
-                            large_transition=large_transition,
-                            num_measurements=len(self.transients.columns) + 1)
+        buffer = PairBuffer(
+            min_tolerance=min_tolerance, buffer_size=buffer_size,
+            percent_tolerance=percent_tolerance,
+            large_transition=large_transition,
+            num_measurements=len(self.transients.columns) + 1)
         for s in subset:
             # if len(buffer.transitionList) < bsize
             if len(buffer.transition_list) == buffer_size:
@@ -248,18 +262,27 @@ class Hart85(object):
             buffer.pair_transitions()
         return buffer.matched_pairs
 
-  
+    def disaggregate_chunk(self, chunk, prev, transients):
+        """
+        Parameters
+        ----------
+        chunk : pd.DataFrame
+            mains power
+        prev
+        transients : returned by find_steady_state_transients
 
-    def hart85_disaggregate_single_chunk(self, chunk, prev, transients):
+        Returns
+        -------
+        states : pd.DataFrame
+            with same index as `chunk`.
         """
 
-        """
-
-        states = pd.DataFrame(-1, index=chunk.index, columns=self.centroids.index.values)
+        states = pd.DataFrame(
+            -1, index=chunk.index, columns=self.centroids.index.values)
         for transient_tuple in transients.itertuples():
             if transient_tuple[0] < chunk.index[0]:
                 # Transient occurs before chunk has started; do nothing
-                pass 
+                pass
             elif transient_tuple[0] > chunk.index[-1]:
                 # Transient occurs after chunk has ended; do nothing
                 pass
@@ -267,123 +290,123 @@ class Hart85(object):
                 # Absolute value of transient
                 abs_value = np.abs(transient_tuple[1:])
                 positive = transient_tuple[1] > 0
-                absolute_value_transient_minus_centroid = pd.DataFrame((self.centroids - abs_value).abs())
+                abs_value_transient_minus_centroid = pd.DataFrame(
+                    (self.centroids - abs_value).abs())
                 if len(transient_tuple) == 2:
                     # 1d data
-                    index_least_delta = absolute_value_transient_minus_centroid.idxmin().values[0]
+                    index_least_delta = (
+                        abs_value_transient_minus_centroid.idxmin().values[0])
                 else:
-                    # 2d data. Need to find absolute value before computing minimum
-                    columns = absolute_value_transient_minus_centroid.columns
-                    absolute_value_transient_minus_centroid["multidim"] = absolute_value_transient_minus_centroid[[columns[0]]]*absolute_value_transient_minus_centroid[[columns[0]]] + absolute_value_transient_minus_centroid[[columns[1]]]*absolute_value_transient_minus_centroid[[columns[1]]]
-                    index_least_delta = absolute_value_transient_minus_centroid["multidim"].argmin()
-                #print("Index_least",index_least_delta)
+                    # 2d data.
+                    # Need to find absolute value before computing minimum
+                    columns = abs_value_transient_minus_centroid.columns
+                    abs_value_transient_minus_centroid["multidim"] = (
+                        abs_value_transient_minus_centroid[columns[0]] ** 2
+                        +
+                        abs_value_transient_minus_centroid[columns[1]] ** 2)
+                    index_least_delta = (
+                        abs_value_transient_minus_centroid["multidim"].argmin())
                 if positive:
                     # Turned on
                     states.loc[transient_tuple[0]][index_least_delta] = 1
                 else:
                     # Turned off
                     states.loc[transient_tuple[0]][index_least_delta] = 0
-
-        return states
+        prev = states.iloc[-1].to_dict()
+        power_chunk_dict = self.assign_power_from_states(states, prev)
+        return pd.DataFrame(power_chunk_dict, index=chunk.index)
 
     def assign_power_from_states(self, states_chunk, prev):
-        """
-
-        """
-        self.schunk = states_chunk
         di = {}
         ndim = len(self.centroids.columns)
         for appliance in states_chunk.columns:
-            df = pd.DataFrame(index = states_chunk.index)
             values = states_chunk[[appliance]].values.flatten()
-            if ndim==1:
+            if ndim == 1:
                 power = np.zeros(len(values), dtype=int)
             else:
                 power = np.zeros((len(values), 2), dtype=int)
-            on = False
+            # on = False
             i = 0
-            while i <len(values)-1:                     
+            while i < len(values) - 1:
                 if values[i] == 1:
-                    #print("A", values[i], i)
+                    # print("A", values[i], i)
                     on = True
-                    i = i +1 
+                    i = i + 1
                     power[i] = self.centroids.ix[appliance].values
-                    while values[i]!=0 and i<len(values)-1:
-                        #print("B", values[i], i)
+                    while values[i] != 0 and i < len(values) - 1:
+                        # print("B", values[i], i)
                         power[i] = self.centroids.ix[appliance].values
                         i = i + 1
                 elif values[i] == 0:
-                    #print("C", values[i], i)
+                    # print("C", values[i], i)
                     on = False
-                    i = i +1 
+                    i = i + 1
                     power[i] = 0
-                    while values[i]!=1 and i<len(values)-1:
-                        #print("D", values[i], i)
+                    while values[i] != 1 and i < len(values) - 1:
+                        # print("D", values[i], i)
                         if ndim == 1:
                             power[i] = 0
                         else:
                             power[i] = [0, 0]
                         i = i + 1
                 else:
-                    #print("E", values[i], i)
-                    # Unknown state. If previously we know about this appliance's state, we can 
+                    # print("E", values[i], i)
+                    # Unknown state. If previously we know about this
+                    # appliance's state, we can
                     # use that. Else, it defaults to 0
-                    if prev[appliance]==-1 or prev[appliance]==0:
-                        #print("F", values[i], i)
+                    if prev[appliance] == -1 or prev[appliance] == 0:
+                        # print("F", values[i], i)
                         on = False
                         power[i] = 0
-                        while values[i]!=1 and i<len(values)-1:
-                            #print("G", values[i], i)
-                            if ndim==1:
+                        while values[i] != 1 and i < len(values) - 1:
+                            # print("G", values[i], i)
+                            if ndim == 1:
                                 power[i] = 0
                             else:
                                 power[i] = [0, 0]
                             i = i + 1
                     else:
-                        #print("H", values[i], i)
+                        # print("H", values[i], i)
                         on = True
                         power[i] = self.centroids.ix[appliance].values
-                        while values[i]!=0 and i<len(values)-1:
-                            #print("I", values[i], i)
+                        while values[i] != 0 and i < len(values) - 1:
+                            # print("I", values[i], i)
                             power[i] = self.centroids.ix[appliance].values
                             i = i + 1
-                    
 
             di[appliance] = power
-            #print(power.sum())
-        return di          
-
+            # print(power.sum())
+        return di
 
     def disaggregate(self, mains, output_datastore, **load_kwargs):
-        """
-        Disaggregate mains according to the model learnt previously.
+        """Disaggregate mains according to the model learnt previously.
 
         Parameters
         ----------
         mains : nilmtk.ElecMeter or nilmtk.MeterGroup
         output_datastore : instance of nilmtk.DataStore subclass
             For storing power predictions from disaggregation algorithm.
-        output_name : string, optional
-            The `name` to use in the metadata for the `output_datastore`.
-            e.g. some sort of name for this experiment.  Defaults to 
-            "NILMTK_Hart85_<date>"
-        resample_seconds : number, optional
+        sample_period : number, optional
             The desired sample period in seconds.
         **load_kwargs : key word arguments
             Passed to `mains.power_series(**kwargs)`
         """
+        load_kwargs = self._pre_disaggregation_checks(load_kwargs)
 
-        date_now = datetime.now().isoformat().split('.')[0]
-        output_name = load_kwargs.pop('output_name', 'Hart85_' + date_now)
-        resample_seconds = load_kwargs.pop('resample_seconds', 60)
+        load_kwargs.setdefault('sample_period', 60)
+        load_kwargs.setdefault('sections', mains.good_sections())
 
+        timeframes = []
         building_path = '/building{}'.format(mains.building())
-        mains_data_location = '{}/elec/meter1'.format(building_path)
+        mains_data_location = building_path + '/elec/meter1'
+        data_is_available = False
 
-        [temp, transients] = find_steady_states_transients(mains, cols=self.cols, state_threshold = self.state_threshold, noise_level=self.noise_level, **load_kwargs)
+        [_, transients] = find_steady_states_transients(
+            mains, cols=self.cols, state_threshold=self.state_threshold,
+            noise_level=self.noise_level, **load_kwargs)
 
         # For now ignoring the first transient
-        transients = transients[1:]
+        # transients = transients[1:]
 
         # Initially all appliances/meters are in unknown state (denoted by -1)
         prev = OrderedDict()
@@ -391,115 +414,39 @@ class Hart85(object):
         for meter in learnt_meters:
             prev[meter] = -1
 
-        states_total = [] 
-        timeframes=[]
+        timeframes = []
         # Now iterating over mains data and disaggregating chunk by chunk
         for chunk in mains.power_series(**load_kwargs):
             # Record metadata
             timeframes.append(chunk.timeframe)
             measurement = chunk.name
-            states_chunk = self.hart85_disaggregate_single_chunk(chunk, prev, transients)
-            prev = states_chunk.iloc[-1].to_dict()
-            power_chunk_dict = self.assign_power_from_states(states_chunk, prev)
-            #self.po = power_chunk_dict
+            power_df = self.disaggregate_chunk(
+                chunk, prev, transients)
+
             cols = pd.MultiIndex.from_tuples([chunk.name])
-            for meter in power_chunk_dict.keys():
-                output_datastore.append('{}/elec/meter{:d}'
-                                        .format(building_path, meter+2),
-                                        pd.DataFrame(power_chunk_dict[meter],
-                                                     index=states_chunk.index,
-                                                     columns=cols))
-       
+
+            for meter in learnt_meters:
+                data_is_available = True
+                df = power_df[[meter]]
+                df.columns = cols
+                key = '{}/elec/meter{:d}'.format(building_path, meter + 2)
+                output_datastore.append(key, df)
+
             output_datastore.append(key=mains_data_location,
                                     value=pd.DataFrame(chunk, columns=cols))
 
-        # DataSet and MeterDevice metadata:
-        meter_devices = {
-            'Hart85': {
-                'model': 'Hart85',
-                'sample_period': resample_seconds,
-                'max_sample_period': resample_seconds,
-                'measurements': [{
-                    'physical_quantity': measurement[0],
-                    'type': measurement[1]
-                }]
-            },
-            'mains': {
-                'model': 'mains',
-                'sample_period': resample_seconds,
-                'max_sample_period': resample_seconds,
-                'measurements': [{
-                    'physical_quantity': measurement[0],
-                    'type': measurement[1]
-                }]
-            }
-        }
+        if data_is_available:
+            self._save_metadata_for_disaggregation(
+                output_datastore=output_datastore,
+                sample_period=load_kwargs['sample_period'],
+                measurement=measurement,
+                timeframes=timeframes,
+                building=mains.building(),
+                supervised=False,
+                num_meters=len(self.centroids)
+            )
 
-        merged_timeframes = merge_timeframes(timeframes, gap=resample_seconds)
-        total_timeframe = TimeFrame(merged_timeframes[0].start,
-                                    merged_timeframes[-1].end)
-
-        dataset_metadata = {'name': output_name, 'date': date_now,
-                            'meter_devices': meter_devices,
-                            'timeframe': total_timeframe.to_dict()}
-        output_datastore.save_metadata('/', dataset_metadata)
-
-        # Building metadata
-
-        # Mains meter:
-        elec_meters = {
-            mains.instance(): {
-                'device_model': 'mains',
-                'site_meter': True,
-                'data_location': mains_data_location,
-                'preprocessing_applied': {},  # TODO
-                'statistics': {
-                    'timeframe': total_timeframe.to_dict()
-                }
-            }
-        }
-
-        # Submeters:
-        # Starts at 2 because meter 1 is mains.
-        for chan in range(2, len(self.centroids)+2):
-            elec_meters.update({
-                chan: {
-                    'device_model': 'Hart85',
-                    'submeter_of': 1,
-                    'data_location': ('{}/elec/meter{:d}'
-                                      .format(building_path, chan)),
-                    'preprocessing_applied': {},  # TODO
-                    'statistics': {
-                        'timeframe': total_timeframe.to_dict()
-                    }
-                }
-            })
-
-       
-        appliances = []
-        for i in range(len(self.centroids.index)):
-            appliance = {
-                    'meters': [i+2],
-                    'type': 'unknown',
-                    'instance': i
-                        # TODO this `instance` will only be correct when the
-                        # model is trained on the same house as it is tested on.
-                        # https://github.com/nilmtk/nilmtk/issues/194
-                    }
-            appliances.append(appliance)
-
-
-        building_metadata = {
-            'instance': mains.building(),
-            'elec_meters': elec_meters,
-            'appliances':appliances
-        }
-
-        output_datastore.save_metadata(building_path, building_metadata)
-
-
-    """        
-        
+    """
     def export_model(self, filename):
         model_copy = {}
         for appliance, appliance_states in self.model.iteritems():
